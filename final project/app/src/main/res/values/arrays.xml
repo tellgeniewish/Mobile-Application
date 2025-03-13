@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="move"> <!-- move라는 배열을 만듦 -->
+        <item>검색</item>
+        <item>후기란</item>
+    </string-array>
+</resources>

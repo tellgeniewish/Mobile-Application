@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">final project</string>
+    <string name="md_url">http://apis.data.go.kr/</string>
+    <string name="serviceKey">wVaUxBRLTrIH7tmrM9ylmHzADpk+7pXSzhJlNioWlNsbIRpLwKMxDFIDQj7xtXwmfYFbpL2tgje2TaXcBZJm2w==</string>
+    <string name="numOfRows">20</string>
+    <string name="pageNo">1</string>
+
+    <string name="myLat">35.163153</string>
+    <string name="myLng">129.159328</string>
+
+    <string name="tmap_url">https://apis.openapi.sk.com/</string>
+    <string name="version">1</string>
+    <string name="centerLon">129.159329</string>
+    <string name="centerLat">35.163153</string>
+    <string name="categories">%EC%95%BD%EA%B5%AD</string>
+    <string name="page">1</string>
+    <string name="count">20</string>
+    <string name="radius">5</string>
+    <string name="reqCoordType">WGS84GEO</string>
+    <string name="resCoordType">WGS84GEO</string>
+    <string name="multiPoint">N</string>
+    <string name="accept">application/json</string>
+    <string name="appKey">rltfQ3KeF83bhr1g3mfSX7ycPoSqKDEU7JTiwbpN</string>
+
+    <string name="naver_url">https://openapi.naver.com/</string>
+    <string name="client_id">UIgiftNle0xiBuMjdovt</string>
+    <string name="client_secret">V8LRLtPvfo</string>
+</resources>

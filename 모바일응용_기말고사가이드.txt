@@ -1,0 +1,164 @@
+※ 아래의 내용 중 10 문제 내외로 구성 후 출제
+
+07주차
+1. Retrofit DTO 생성 방법
+/*data class 를 사용하여 DTO 작성*/
+data class Root(
+    @SerializedName("boxOfficeResult") val movieResult: BoxOfficeResult,
+)
+
+data class BoxOfficeResult(
+    val boxofficeType: String, // 필요없으면 지워도 됨
+    val showRange: String,
+    //val dailyBoxOfficeList: List<Movie>, // key값랑 멤버변수는 같아야 함 --> annotation으로 변경 ㄱㄴ(컴파일러용 주석)
+    @SerializedName("dailyBoxOfficeList") val movieList: List<Movie>,
+)
+
+data class Movie(
+    val rank: String,
+    @SerializedName("movieNm") val title: String,
+    //val openDt: String,,
+    @SerializedName("openDt") val openDate: String,
+)
+2. Retrofit OpenAPI 요청 인터페이스 정의 방법
+interface IBoxOfficeService {
+    //@GET ("kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json")
+    @GET ("kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.{type}")
+
+    suspend fun getDailyBoxOffice(
+        // path상의 값을 변경하고 싶을 때
+        @Path("type") type: String,
+
+        // 쿼리 부분은 매개변수로
+        @Query("key") key: String, // import 시, Retrofit으로
+        @Query("targetDt") targetDate: String
+    ): Root //Call<Root> // 비동기 방식으로 요청 시 Retrofit에 해당하는 Call을 import
+
+
+}
+3. Retrofit 서비스응답 처리객체 생성 방법
+val retrofit : Retrofit = Retrofit.Builder()
+                                  .baseUrl(context.resources.getString(R.string.kobis_url))
+                                  .addConverterFactory(GsonConverterFactory.create())
+                                  .build()
+
+
+        movieService = retrofit.create(IBoxOfficeService::class.java) // IBoxOfficeService의 객체가 만들어짐
+    
+4. Glide 의 사용
+// 실습1. url 에 해당하는 이미지 바로 표시
+//                Glide.with(this@MainActivity)
+//                    .load(url)
+//                    .into(binding.imageView)
+
+// 실습2. ViewModel 을 통해 Bitmap 을 가져와 표시
+//                nvViewModel.setImage(url)
+
+//                Glide.with(this@MainActivity)
+//                    .asBitmap()
+//                    .load(url)
+//                    .into(object: CustomTarget<Bitmap> (350, 350) { // 픽셀 // 원본 사용하려면 Target.SIZE_ORIGINAL
+//                        override fun onResourceReady( // 잘 읽어온 상태
+//                            resources: Bitmap,
+//                            transition: Transition<in Bitmap>?
+//                        ) { // 파일로 저장하는 작업
+//                            val imageFile = File("${filesDir}/images", "image.jpg")
+//                            val fos = FileOutputStream(imageFile)
+//                            resources.compress(Bitmap.CompressFormat.JPEG, 100, fos)
+//                            fos.close()
+//                        }
+//
+//                        override fun onLoadCleared(placeholder: Drawable?) { // 사진을 읽어오다 문제 발생했을 때
+//                            Log.d(TAG, "Image load cleared")
+//                        }
+//                    })
+
+// 실습3. 클릭할 경우 Image 의 url 을 Intent 에 저장(key: url) 후 DetailActivity 호출
+                val intent: Intent = Intent(this@MainActivity, DetailActivity::class.java)
+                intent.putExtra("url", url)
+                startActivity(intent)
+
+09주차
+1. 내부저장소 File 읽기 및 쓰기
+// 쓰기(매번 Synchronize해야 확인 ㄱㄴ)
+//        val writeData = "Mobile Application"
+//        val writeFile = File(filesDir, "test.txt")
+//        val outputStream = FileOutputStream(writeFile)
+//        outputStream.write(writeData.toByteArray())
+//        outputStream.close()
+
+        // 읽기(내부 저장소)
+//        openFileInput("test.txt").bufferedReader().useLines { lines ->
+//            for (line in lines) {
+//                Log.d(TAG, line + "\n")
+//            }
+//        }
+
+2. 이미지 파일 읽기 및 쓰기
+// 내부 저장소에 있는 이미지 파일 읽기
+//        val imageFile = File(filesDir, "image.jpg")
+//        val bitmap = BitmapFactory.decodeFile(imageFile.path)
+//        binding.imageView.setImageBitmap(bitmap)
+        // 저장할 땐 상관없지만 읽어올 때 사진 용량이 너무 크면 앱이 죽는다 --> Glide 사용하면 됨
+
+        // Glide로 내부 저장소에 있는 이미지 파일 읽기
+//        Glide.with(this)
+//            .load("${filesDir}/images/image.jpg") // 기본 위치라면 "${filesDir}/image.jpg"
+//            .into(binding.imageView)
+3. SharedPreference 의 사용
+with
+apply()
+
+10주차
+1. Notification 생성 (알림 화면은 시험 시 제시)
+val notiManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+notificationManager.createNotificationChannel(mChannel)
+
+var newNoti = NotificationCompat.Builder(this, channelID)
+	.setPriority(NotificationCompat.PRIORITY_DEFAULT)
+2. BroadcastReceiver 의 구현
+/*알람 실행 시 MyBroadcastRecevier 실행, ALARM_MESSAGE 전달*/
+            val intent = Intent (this, MyBroadcastReceiver::class.java).apply {
+                action = "ddwu.com.mobile.week10.alarmtest.ACTION_ALARM"
+                putExtra("ALARM_MESSAGE", "일어나세요!")
+            }
+
+            val pendingIntent : PendingIntent
+                    = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+
+3. Alarm 의 등록 (Alarm의 종류, 유형 등은 시험 시 제시)
+/*알림 표시*/
+        val alarmNotiBuilder = NotificationCompat.Builder(context!!, channelID)
+            .setSmallIcon(R.drawable.ic_stat_name)
+            .setContentTitle("알람!!!")
+            .setContentText(alarmMessage)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+
+        val notiManager = NotificationManagerCompat.from(context)
+        notiManager.notify(100, alarmNotiBuilder.build())
+
+11주차
+1. 필요 퍼미션과 실시간 퍼미션 확인
+2. 기기 위치 확인
+3. 지오코딩 및 역지오코딩 활용
+getFromLocationName
+getFromLocation
+
+12주차
+1. 구글맵 추가 및 코드로 가져오기
+val mapFragment = SupportMapFragmentManager.findFrangmentById(R.id.map) as SupportMapFragment
+
+OnMapReady
+
+2. 구글맵의 위치 이동
+3. 구글뱁의 마커 및 라인 표시
+4. 구글맵 관련 각종 이벤트 처리
+
+13주차
+1. Media Database 외부저장소 검색(전체 또는 특정이미지)
+2. 외부 카메라의 활용 (저화질, 고화질)
+
+14주차
+1. 센서의 사용 구현
+2. Device Orientation 구현

@@ -1,0 +1,656 @@
+※ 아래 범위의 내용을 시험 문제로 구성하여 출제 예정 
+
+[02주차 & 03주차]
+- ROOM Entity 작성 방법
+@Entity (tableName = "food_table") // 자동으로 테이블을 만든다 // 속성을 사용하지 않으면 data class 이름으로 테이블이 생긴다
+data class Food( // @Entity만 사용하면 Food 테이블이 생긴다
+    @PrimaryKey (autoGenerate = true) // 자동으로 카운팅하면서 넘어간다
+    val _id: Int, // 0을 넣어줘야 함!
+
+    var food: String,
+    var country: String
+)
+
+- ROOM DAO 작성 방법
+@Dao // room으로 만든 테이블을 저장 ㄱㄴ
+interface FoodDao { // 인터페이스는 기능 구현 안 함 // 함수들을 사용하는 클래스
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFood(food: Food) // 편의 메소드를 쓸 때는 매개변수로 Entity가 들어와야 함
+    // suspend(중단하다)는 원샷 쿼리 앞에 suspend 붙인다
+    // 함수를 수행 중에 메인에서 동작이 있어서 호출이 오면 함수가 멈추고
+    // 메인이 할 일이 끝나면 다시 돌아와서 할 일을 이어서 한다
+    
+    //@Update
+    //suspend fun updateFood(food: Food) // _id(Primary Key)를 기준으로
+    // 음식 이름 기준으로 나라 이름 변경
+    @Query("UPDATE food_table SET country = :newCountry WHERE food = :food_name")
+    suspend fun updateFood(food_name: String, newCountry: String)
+
+//    @Delete
+//    suspend fun deleteFood(food: Food)
+    // 음식 이름 기준으로 지우기
+    @Query("DELETE FROM food_table WHERE food = :food_name")
+    suspend fun deleteFood(food_name: String)
+
+    @Query("SELECT * FROM food_table")
+//    fun getAllFoods() : List<Food>
+    fun getAllFoods() : Flow<List<Food>> // 코루틴의 Flow를 ALT+ENTER해야 한다
+    // 계속 관찰할 결과값(List<Food>)을 Flow로 감싸준다
+
+    @Query("SELECT * FROM food_table WHERE country = :country")
+    suspend fun getFoodsByCountry(country: String) : List<Food>
+}
+
+@Database (entities = [Food::class], version = 1) // entities인 이유: 테이블이 여러 개일 수도 있다
+
+- ROOM 함수의 Coroutine 적용 및 사용
+R.id.btnShowFood -> {
+//                show food by country
+                Thread { // 안 쓰면 바로 죽음
+                    val foods: List<Food> = foodDao.showFoodByCountry("대한민국")
+
+                    for (food in foods) {
+                        Log.d("MainActivity", food.toString())
+                    }
+                }.start()
+            }
+
+class FoodRepository(private val foodDao: FoodDao) { // Dao를 접근하는 멤버변수를 추가(private 사용 이유: SSOT 나만 통해서 사용 ㄱㄴ!)
+    val allFoods: Flow<List<Food>> = foodDao.getAllFoods()
+    
+    suspend fun addFood(food: Food) { // 실제 Dao와 분리
+        foodDao.insertFood(food) // 간접적으로 사용할 수 있도록
+    }
+//    suspend fun modifyFood(food: Food) {
+//        foodDao.updateFood(food)
+//    }
+    // 음식 이름 기준으로 나라 이름 변경
+    suspend fun modifyFood(food_name: String, countryName: String) {
+        foodDao.updateFood(food_name, countryName)
+    }
+//    suspend fun removeFood(food: Food) {
+//        foodDao.deleteFood(food)
+//    }
+    // 음식 이름 기준으로 지우기
+    suspend fun removeFood(food_name: String) {
+        foodDao.deleteFood(food_name)
+    }
+
+    suspend fun showFoodsByCountry(country: String): List<Food> {
+        return foodDao.getFoodsByCountry(country)
+    }
+}
+
+class FoodApplication: Application() { // Application()을 상속받아야 함
+    // 내가 만든 어플리케이션 사용하고 싶으면
+    // AndroidManifest의 <application> 안에
+    // android:name=".FoodApplication"로 지정
+    val foodRepo by lazy {
+        val database = FoodDatabase.getDatabase(this)
+        FoodRepository(database.foodDao())
+    }
+}
+
+/*
+        Dispatchers.Main: 메인 쓰레드 화면 갱신
+        Dispatchers.IO: DB 접근, 입출력
+        Dispatchers.default: 계산량이 많아 cpu파워가 많이 필요할 때
+
+        launch하면 스코프가 동작하면서 함수 실행됨
+        launch는 리턴값(응답값)이 없는 동작을 실행할 때
+        */
+
+val foodFlow: Flow<List<Food>> = foodRepo.allFoods
+        // 변경이 있을 때마다 실행
+        CoroutineScope(Dispatchers.Main).launch { // collect는 코루틴 스코프 안에서 사용해야 함
+            // collect로 계속 관찰 ㄱㄴ
+            foodFlow.collect { foods -> // foods는 List<Food>를 의미한다
+            // foodFlow.distinctUntilChanged().collect { foods -> 처럼 distinctUntilChanged()를 사용하면 데이터의 값이 변화가 있을 때만 작동
+//                for (food in foods) {
+//                    Log.d(TAG, food.toString()) // 데이터를 추가하면 바로 Logcat에 찍힌다
+//                }
+                adapter.foods.clear()
+                adapter.foods.addAll(foods)
+                adapter.notifyDataSetChanged()
+            }
+        }
+// insert new food
+        binding.btnInsert.setOnClickListener {
+            val foodName = binding.etFood.text.toString()
+            val countryName = binding.etCountry.text.toString()
+            val food = Food(0, foodName, countryName)   // new food
+
+//            Thread {
+//                foodDao.insertFood(food)
+//            }.start()
+            CoroutineScope(Dispatchers.IO).launch { // 변경이 있을 때마다 DB에서 읽어와서 갱신
+//                foodDao.insertFood(food)
+                foodRepo.addFood(food)
+            }
+        }
+// 음식 이름 기준으로 지우기
+        binding.btnDelete.setOnClickListener {
+            val foodName = binding.etFood.text.toString()
+            //val targetFood = Food(3, "", "")    // delete food _id 3
+            CoroutineScope(Dispatchers.IO).launch {
+                foodRepo.removeFood(foodName)
+            }
+        }
+        adapter.setOnItemLongClickListener(object: FoodAdapter.OnItemLongClickListener {
+            override fun onItemLongClickListener(view: View, pos: Int) {
+                val clickedFood = adapter.foods[pos].food.toString()
+                CoroutineScope(Dispatchers.IO).launch {
+                    foodRepo.removeFood(clickedFood)
+                }
+            }
+        })
+
+
+[04주차]
+- ViewModel 클래스 구현
+class FoodViewModel (val foodRepo: FoodRepository): ViewModel() { // ViewModel()을 상속받음
+    var allFoods: LiveData<List<Food>> = foodRepo.allFoods.asLiveData()
+    // Flow데이터(생명주기와 상관없이 살아있음)를 라이브 데이터로 바꿈
+    // 라이브 데이터로 변화 -> 화면에 보일 때만 살아있음 -> 생명주기를 인식함
+
+    fun getFoodByCountry(country: String): Deferred<List<Food>> {
+        val defferedFoods = viewModelScope.async {
+            foodRepo.getFoodByCountry(country)
+        }
+        return defferedFoods
+    }
+
+    // viewModel안에서 코루틴 관련 코드를 사용할 때 viewModelScope 사용
+    fun addFood(food: Food) = viewModelScope.launch { // viewModelScope = viewModel전용 코루틴Scope
+        foodRepo.addFood(food)
+    }
+
+    fun modifyFood(food: Food) = viewModelScope.launch {
+        foodRepo.modifyFood(food)
+    }
+
+    fun removeFood(food: Food) = viewModelScope.launch {
+        foodRepo.removeFood(food)
+    }
+
+    fun modifyFoodCountryByFood(food: Food) = viewModelScope.launch {
+        foodRepo.modifyFoodCountryByFood(food)
+    }
+
+    fun removeFoodByName(food: Food) = viewModelScope.launch {
+        foodRepo.removeFoodByName(food)
+    }
+}
+
+- ViewModel 객체 생성
+// FoodViewModel
+        // 지역변수로 만들면 액티비티가 사라질 때 함께 사라진다 -> Factory를 사용해서 만들어야 함
+        val viewModel: FoodViewModel by viewModels { // by는 코틀린에서 제공하는 대리(delegate)하는 역할: 아직 구현하지 않은 기능을 viewModels에서 가져온다
+            FoodViewModelFactory((application as FoodApplication).foodRepo)
+        }
+
+- ViewModel이 보유한 변수를 MainActivity에서 사용하는 법
+viewModel.allFoods.observe(this, Observer{ foods -> // 라이브 데이터 타입
+            // allFoods가 화면이 보일 때만 관찰함
+            adapter.foods = foods
+            adapter.notifyDataSetChanged()
+        })
+
+// food by country
+        binding.btnShow.setOnClickListener {
+            val country = binding.etCountry.text.toString()
+
+//            CoroutineScope(Dispatchers.IO).launch {
+//                val foods = foodRepo.getFoodByCountry(country)
+//                for (food in foods) {
+//                    Log.d(TAG, food.toString())
+//                }
+//            }
+            CoroutineScope(Dispatchers.Main).launch { // Main인 이유: binding.etFood 때문에
+                // 화면에 있는 요소에 접근하려면 Main을 사용해야 함
+                // IO를 쓰면 죽음
+                val foods = viewModel.getFoodByCountry(country).await() // await은 코루틴 안에서 호출 ㄱㄴ
+                binding.etFood.setText(foods[0].foodName)
+                for (food in foods) {
+                    Log.d(TAG, food.toString())
+                }
+            }
+
+        }
+
+        binding.btnInsert.setOnClickListener {
+            val foodName = binding.etFood.text.toString()
+            val countryName = binding.etCountry.text.toString()
+            val food = Food(0, foodName, countryName)   // new food
+
+            // 직접 쓰는 방식
+//            CoroutineScope(Dispatchers.IO).launch {
+//                foodRepo.addFood(food)
+//            }
+            viewModel.addFood(food)
+        }
+
+        // update food
+        binding.btnUpdate.setOnClickListener {
+            val foodName = binding.etFood.text.toString()
+            val countryName = binding.etCountry.text.toString()
+            val food = Food(0, foodName, countryName)
+
+            viewModel.modifyFoodCountryByFood(food)
+        }
+
+        // delete food
+        binding.btnDelete.setOnClickListener {
+            val foodName = binding.etFood.text.toString()
+            val food = Food(0, foodName, "")
+
+            viewModel.removeFoodByName(food)
+        }
+
+[05주차]
+android.permission.ACCESS_NETWORK_STATE
+- 네트워크 환경 조사
+class NetworkUtil(val context: Context) {
+
+    val TAG = "NetworkUtil"
+
+    val streamUtil = StreamUtil()
+
+    
+
+    // upload and download data on network
+    fun sendPostData(requestMethod: String, address: String, data: String) : String? {
+        var receivedContents : String? = null
+        var resultStream : InputStream? = null
+        var conn : HttpsURLConnection? = null
+
+        try {
+            // getConnection() 사용하여 Connection 을 post 방식으로 data 를 전달하며 요청하여 결과 inputStream 을 String으로 변환
+            // 변환한 String 을 receivedContents 에 저장
+            conn = getConnection(requestMethod, address, data)
+            resultStream = conn?.inputStream                                    // 응답 결과 스트림 확인
+            receivedContents = streamUtil.readStreamToString (resultStream)     // stream 처리 함수를 구현한 후 사용
+        } catch (e: Exception) {        // MalformedURLException, IOExceptionl, SocketTimeoutException 등 처리 필요
+            e.printStackTrace()
+        } finally {
+            if (resultStream != null) { try { resultStream.close()} catch (e: IOException) { Log.d(TAG, e.message!!) } }
+            if (conn != null) conn.disconnect()
+        }
+        return receivedContents
+    }
+
+    @Throws(IOException::class, SocketTimeoutException::class)
+    private fun getConnection(requestMethod: String, address: String, data: String?) : HttpsURLConnection? {
+        // HTTP 통신 requestMethod: GET(읽기), POST(쓰기), UPDATE(변경), DELETE(삭제)
+
+        val url = URL(address)
+        var conn = url.openConnection() as HttpsURLConnection
+
+        // 5000 = 5초
+        conn.readTimeout = 5000                                 // 읽기 타임아웃 지정 - SocketTimeoutException
+        conn.connectTimeout = 5000                              // 연결 타임아웃 지정 - SocketTimeoutException
+        conn.doInput = true                                     // 서버 응답 지정 ? default
+        conn.requestMethod = requestMethod                      // 연결 방식 지정 - or POST
+
+        if (requestMethod.equals("POST")) {
+            conn.doOutput = true // 서버에 데이터를 넣겠다
+            conn.setRequestProperty("content-type", "application/x-www-form-urlencoded; charset=UTF-8")
+            val params = "subject=" + data // key와 value의 쌍 형태로
+            val outStreamWriter : OutputStreamWriter = OutputStreamWriter(conn.outputStream, "UTF-8")
+            val writer : BufferedWriter = BufferedWriter(outStreamWriter) // Buffered~ 사용 이유: 성능 개선
+            writer.write(params)
+            writer.flush()
+        }
+
+//        conn.connect()                                        // 통신 링크 열기 ? 트래픽 발생
+        val responseCode = conn.responseCode
+        // 서버 전송 및 응답 결과 수신
+        if (responseCode != HttpURLConnection.HTTP_OK) { // HTTP_OK == 200
+            throw IOException("Http Error Code: $responseCode")
+            return null
+        }
+
+        return conn
+    }
+
+    fun getNetworkInfo() : String {
+        val connMgr = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        var isWifiConn: Boolean = false
+        var isMobileConn: Boolean = false
+
+        connMgr.allNetworks.forEach { network ->
+            connMgr.getNetworkInfo(network)?.apply {
+                if (type == ConnectivityManager.TYPE_WIFI) {
+                    isWifiConn = isWifiConn or isConnected
+                }
+                if (type == ConnectivityManager.TYPE_MOBILE) {
+                    isMobileConn = isMobileConn or isConnected
+                }
+            }
+        }
+
+        val result = StringBuilder()
+        result.append("Wifi connected: $isWifiConn\n")
+        result.append("Mobile connected: $isMobileConn\n")
+
+        Log.d(TAG, "Wifi connected: $isWifiConn")
+        Log.d(TAG, "Mobile connected: $isMobileConn")
+
+        return result.toString()
+    }
+
+    fun isOnline(): Boolean {
+        val connMgr = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val networkInfo: NetworkInfo? = connMgr.activeNetworkInfo
+        return networkInfo?.isConnected == true
+    }
+}
+
+- 네트워크 데이터 전송 및 수신 (GET)
+fun downloadText(address: String) : String? {
+        var receivedContents : String? = null
+        var resultStream : InputStream? = null
+        var conn : HttpURLConnection? = null
+
+        try {
+            conn = getConnection("GET", address, null)
+            resultStream = conn?.inputStream                                    // 응답 결과 스트림 확인
+            receivedContents = streamUtil.readStreamToString (resultStream)     // stream 처리 함수를 구현한 후 사용
+        } catch (e: Exception) {        // MalformedURLException, IOExceptionl, SocketTimeoutException 등 처리 필요
+            e.printStackTrace()
+        } finally {
+            if (resultStream != null) { try { resultStream.close()} catch (e: IOException) { Log.d(TAG, e.message!!) } }
+            if (conn != null) conn.disconnect()
+        }
+
+        return receivedContents
+    }
+
+    // Download image(binary data) from network
+    fun downloadImage(address : String) : Bitmap? {
+        var receivedBitmap : Bitmap? = null
+        var resultStream : InputStream? = null
+        var conn: HttpsURLConnection? = null
+
+        try {
+            // getConnection() 을 사용하여 connection 요청 후 inputStream 을 가져와 Bitmap 으로 변환
+            // 변환한 Bitmap 을 receivedBitmap 에 저장
+            conn = getConnection("GET", address, null)
+            resultStream = conn?.inputStream                                    // 응답 결과 스트림 확인
+            receivedBitmap = streamUtil.readStreamToImage (resultStream)        // stream 처리 함수를 구현한 후 사용
+        } catch (e : Exception) {
+            e.printStackTrace()
+        } finally {
+            if (resultStream != null) { try { resultStream.close()} catch (e: IOException) { Log.d(TAG, e.message!!) } }
+            if (conn != null) conn.disconnect()
+        }
+
+        return receivedBitmap
+    }
+
+[06주차]
+- XmlPullParser 구현 전체
+
+/*
+        MainActivity
+
+        NetworkViewModel
+
+        NetworkRepository
+
+        NetworkService
+
+        NetworkUtil
+
+        StreamUtil
+     */
+
+
+class MovieParser {
+    private val ns: String? = null
+
+    companion object {
+        /*Parsing 에 사용할 TAG 정적상수 선언*/
+        val UPPER_TAG = "dailyBoxOfficeList"
+        val ITEM_TAG = "dailyBoxOffice"
+        val RANK_TAG = "rank"
+        val TITLE_TAG = "movieNm"
+        val OPEN_DATE_TAG = "openDt"
+    }
+
+    @Throws(XmlPullParserException::class, IOException::class)
+    fun parse(inputStream: InputStream?) : List<Movie> {
+
+        inputStream.use { inputStream ->
+            val parser : XmlPullParser = Xml.newPullParser()
+
+            /*Parser 의 동작 정의, next() 호출 전 반드시 호출 필요*/
+            parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+
+            /* Paring 대상이 되는 inputStream 설정 */
+            parser.setInput(inputStream, null)
+
+            /*Parsing 대상 태그의 상위 태그까지 이동*/
+            while (parser.name != UPPER_TAG/*상위태그*/) {
+                parser.next()
+            }
+
+            return readBoxOffice(parser)
+        }
+    }
+
+    @Throws(XmlPullParserException::class, IOException::class)
+    private fun readBoxOffice(parser: XmlPullParser) : List<Movie> {
+        val movies = mutableListOf<Movie>()
+
+        parser.require(XmlPullParser.START_TAG, ns,  UPPER_TAG/*상위태그*/)
+        while(parser.next() != XmlPullParser.END_TAG) {
+            if (parser.eventType != XmlPullParser.START_TAG) {
+                continue
+            }
+            if (parser.name == ITEM_TAG/*항목태그*/) {
+                movies.add( readDailyBoxOffice(parser) )
+            } else {
+                skip(parser)
+            }
+        }
+
+        return movies
+    }
+
+
+    @Throws(XmlPullParserException::class, IOException::class)
+    private fun readDailyBoxOffice(parser: XmlPullParser) : Movie {
+        parser.require(XmlPullParser.START_TAG, ns, ITEM_TAG/*항목태그*/)
+
+        /*Parsing 한 TEXT 값을 저장할 변수 선언*/
+        var rank: Int? = null
+        var title: String? = null
+        var openDate: String? = null
+
+        while (parser.next() != XmlPullParser.END_TAG) {
+            if (parser.eventType != XmlPullParser.START_TAG) {
+                continue
+            }
+            when (parser.name) {
+                /*TAG 명에 따라 변수에 TEXT 저장*/
+                RANK_TAG -> rank = readTextInTag(parser, RANK_TAG).toInt()
+                TITLE_TAG -> title = readTextInTag(parser, TITLE_TAG)
+                OPEN_DATE_TAG -> openDate = readTextInTag(parser, OPEN_DATE_TAG)
+
+                else -> skip(parser)
+            }
+        }
+        /*저장한 변수로 Movie 생성*/
+        return Movie(rank, title, openDate)
+    }
+
+
+    @Throws(IOException::class, XmlPullParserException::class)
+    private fun readTextInTag (parser: XmlPullParser, tag: String): String {
+        parser.require(XmlPullParser.START_TAG, ns, tag)
+        var text = ""
+        if (parser.next() == XmlPullParser.TEXT) {
+            text = parser.text
+            parser.nextTag()
+        }
+        parser.require(XmlPullParser.END_TAG, ns, tag)
+        return text
+    }
+
+
+    @Throws(XmlPullParserException::class, IOException::class)
+    private fun skip(parser: XmlPullParser) {
+        if (parser.eventType != XmlPullParser.START_TAG) {
+            throw IllegalStateException()
+        }
+        var depth = 1
+        while (depth != 0) {
+            when (parser.next()) {
+                XmlPullParser.END_TAG -> depth--
+                XmlPullParser.START_TAG -> depth++
+            }
+        }
+    }
+}
+
+// 새로운 버전의 NetworkUtil 클래스
+class NetworkUtil(val context: Context) {
+
+    val TAG = "NetworkUtil"
+
+    companion object {
+        val GET = "GET"
+        val POST = "POST"
+    }
+
+    /**
+     * GET 요청을 위한 URL에 쿼리 파라미터를 추가합
+     *
+     * @param address String 기본 URL 주소
+     * @param data Map<String, String>? 추가할 쿼리 파라미터. key는 파라미터 이름, value는 파라미터 값
+     * @return String 쿼리 파라미터가 추가된 완성된 URL
+     */
+    private fun addGetParams(address: String, data: Map<String, String>?) : String {
+        var addressBuilder = StringBuilder(address)
+
+        // GET 방식일 경우 addres에 parameters 추가
+        addressBuilder = addressBuilder.append("?")
+        data?.forEach { (key, value) ->
+            addressBuilder.append("$key=$value&")
+        }
+        addressBuilder.deleteCharAt(addressBuilder.lastIndex)
+
+        return addressBuilder.toString()
+    }
+
+
+    /**
+     * GET 또는 POST 요청을 처리
+     *
+     * @param requestMethod String GET 또는 POST
+     * @param address String 서버 주소
+     * @param data String? 서버에 GET 또는 POST 방식으로 전달할 매개변수
+     * @return InputStream? Server 요청결과
+     */
+    @Throws(IOException::class, SocketTimeoutException::class)
+    fun sendRequest(requestMethod: String, address: String, data: Map<String, String>?) : InputStream? {
+
+        var url : URL =  if (requestMethod == "GET") {
+            URL(addGetParams(address, data))        // GET 방식일 경우 address 에 parameters 추가
+        } else {
+            URL(address)
+        }
+
+        return (url.openConnection() as? HttpsURLConnection)?.apply {   // apply를 사용하여 connection객체. 생략
+            readTimeout = 5000
+            connectTimeout = 5000
+            doInput = true
+            this.requestMethod = requestMethod
+
+            /*Naver OpenAPI 를 사용할 때만 필요*/
+//            addRequestProperty("X-Naver-Client-Id", context.resources.getString(R.string.client_id))
+//            addRequestProperty("X-Naver-Client-Secret", context.resources.getString(R.string.client_secret))
+
+            // POST 방식일 경우 doOutput 지정 및 property 추가
+            if (requestMethod == "POST") {
+                doOutput = true
+                data?.forEach { (key, value) ->
+                    setRequestProperty(key, value)
+                }
+                outputStream.use { oStream ->                       // use를 적용하여 사용 종료 후 close
+                    OutputStreamWriter(oStream).use { osWriter ->
+                        BufferedWriter(osWriter).use { bWriter ->
+                            bWriter.flush()
+                        }
+                    }
+                }
+            }
+
+            connect()
+
+            if (responseCode != HttpURLConnection.HTTP_OK) {        // 서버 전송 및 응답 결과 수신
+                throw IOException("Http Error Code: $responseCode")
+            }
+        }?.inputStream
+
+    }
+
+
+    fun getNetworkInfo() : String {
+        val connMgr = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        var isWifiConn: Boolean = false
+        var isMobileConn: Boolean = false
+
+        connMgr.allNetworks.forEach { network ->
+            connMgr.getNetworkInfo(network)?.apply {
+                if (type == ConnectivityManager.TYPE_WIFI) {
+                    isWifiConn = isWifiConn or isConnected
+                }
+                if (type == ConnectivityManager.TYPE_MOBILE) {
+                    isMobileConn = isMobileConn or isConnected
+                }
+            }
+        }
+
+        val result = StringBuilder()
+        result.append("Wifi connected: $isWifiConn\n")
+        result.append("Mobile connected: $isMobileConn\n")
+
+        Log.d(TAG, "Wifi connected: $isWifiConn")
+        Log.d(TAG, "Mobile connected: $isMobileConn")
+
+        return result.toString()
+    }
+
+
+    fun isOnline(): Boolean {
+        val connMgr = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val networkInfo: NetworkInfo? = connMgr.activeNetworkInfo
+        return networkInfo?.isConnected == true
+    }
+
+
+}
+
+class NetworkService(private val context: Context) {
+    suspend fun getDailyBoxOffice(date: String) : List<Movie> {
+
+        /*address 변수에 OpenAPI 서버 주소 저장 - strings.xml 활용*/
+        val address : String = context.resources.getString(R.string.movie_url)
+
+        /*HashMap 을 사용하여 key 와 targetDt 저장*/
+        val params = HashMap<String, String>()
+        params["key"] = context.resources.getString(R.string.movie_key)
+        params["targetDt"] = date
+
+        val resultStream: InputStream? = try {
+            NetworkUtil(context).sendRequest(NetworkUtil.GET, address, params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+        /*resultStream 을 MovieParser 의 parse() 함수에 전달*/
+        return MovieParser().parse(resultStream)
+    }
+}

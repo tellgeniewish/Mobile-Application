@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <group android:checkableBehavior="single">
+        <item
+            android:id="@+id/searchMenu"
+            android:title="검색하기" />
+        <item
+            android:id="@+id/addDramaMenu"
+            android:title="후기란" />
+    </group>
+</menu>
